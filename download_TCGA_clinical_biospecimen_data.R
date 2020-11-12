@@ -17,6 +17,8 @@ for(s in tcgaProjList){
     mdListDF<-dplyr::bind_rows(mdListDF,temp)  
   }
   
+  
+  
 }
 
 require(tidyr)
@@ -56,3 +58,19 @@ printDatadim<-function(projName){
   print(paste("clinical dim:",dim(clinicalBRCA)))
   print(paste("biospc dim:",dim(biospecimenBRCA)))
 }
+
+
+#remove cols with all NA values
+naCols<-colnames(mdListDF)[sapply(mdListDF, function(x)all(is.na(x)))]
+mdListDFNONA<-mdListDF[,!(colnames(mdListDF) %in% naCols)]
+#keep rows with RNA samples only
+#mdListDFRNA<-mdListDF%>%filter(portions.analytes.analyte_type_id == "R")
+#mdList<-mdListDFNONA
+
+##not requirded
+ulMD<-unlist(mdList)
+mdJoined<-rbindlist(unlist(mdListDFNONA))
+n1<-colnames(t)
+n2<-colnames(BRCAMetadata)
+n3<-colnames(mdListDF)
+setdiff(n2,n1)
