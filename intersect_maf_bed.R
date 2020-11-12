@@ -115,6 +115,7 @@ snv_ranges_filter <- function(maf_df,
 }
 
 
+
 #input, change start and end position name and save the SNP location as loc_start and loc_end
 a<-maf@maf.silent
 a$loc_start=a$Start_Position
@@ -151,4 +152,8 @@ tmb <- filt_maf_df %>%
     region_size = bed_size,
     tmb = mutation_count / (region_size / 1000000)
   )
+
+
+
+
 
