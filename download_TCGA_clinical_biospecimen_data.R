@@ -237,6 +237,10 @@ brca_clin <-brca_clin %>% dplyr::select(-starts_with("patient"))
 
 
 
+https://github.com/ramaanathan/SurvivalAnalysis/blob/master/Survival_Analysis_TCGA.R
+
+
+
 
 grep(c("disease_code","drug.therapy"), names(BRCA.clinical))
 clin<-

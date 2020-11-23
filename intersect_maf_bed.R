@@ -13,7 +13,7 @@ g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Resear
 #make Granges data from the maf file
 maf <- GDCquery_Maf("CHOL", pipelines = "muse") %>% read.maf()
 
-g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Research/annotation_G_quad_28feb2020/1_sorted_200_added.bed',sep= '\t',col.names=c("chromosome","start","end","id","score","strand")) %>%  arrange(chromosome,start,end)%>% distinct()
+g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Research/annotation_G_quad_28feb2020/4_bed.bed',sep= '\t',col.names=c("chromosome","start","end","strand","id")) %>%  arrange(chromosome,start,end)%>% distinct()
 
 ##convert maf to granges object
 
@@ -27,7 +27,9 @@ maf_to_granges <- function(maf_df) {
     mcols = maf_df
   )
 }
- keep_ranges<-function(keep_ranges){
+ 
+keep_ranges<-function(keep_ranges){
+   #if (is.na(flank)) {
 if (is.data.frame(keep_ranges)) {
   # Turn the bed regions df into a GRanges object
   keep_ranges <- GenomicRanges::GRanges(
@@ -35,15 +37,19 @@ if (is.data.frame(keep_ranges)) {
     ranges = IRanges::IRanges(
       start = keep_ranges$start,
       end = keep_ranges$end
-    )
+    ),
+    mcols = keep_ranges
   )
-}
-}
 
+   }
+ 
+ }
+ 
 
 snv_ranges_filter <- function(maf_df,
                               keep_ranges = keep_ranges,
-                              bp_window = 0) {
+                              bp_window = bp_window)
+  {
   # Given a MAF formatted data.frame and a BED regions data.frame; filter out
   # any variants of the MAF df that are not within the BED regions.
   #
@@ -69,7 +75,9 @@ snv_ranges_filter <- function(maf_df,
   
   #####get the ratio of G4 in maf file of specific tumors
   
-  maf_granges <- maf_to_granges(maf_df)
+  maf_granges <- maf_to_granges(a)
+  
+  
   
   if (is.data.frame(keep_ranges)) {
     # Turn the bed regions df into a GRanges object
@@ -82,13 +90,18 @@ snv_ranges_filter <- function(maf_df,
     )
   }
   
+
+
+  ranges<-subsetByOverlaps(keep_ranges, maf_granges)
+  overlap <- findOverlaps(keep_ranges, maf_granges,maxgap = bp_window)
+  gr1.matched <- keep_ranges[queryHits(overlap)]
+  mcols(gr1.matched) <- cbind.data.frame(
+    mcols(gr1.matched),
+    mcols(maf_granges[subjectHits(overlap)]));
   
   
-  overlap <- GenomicRanges::findOverlaps(
-    maf_granges,
-    keep_ranges,
-    maxgap = bp_window
-  )
+  
+  g4_maf<-as.data.frame(gr1.matched)
   
   
   # Calculate of ratio of variants in this BED using the @from slot which
@@ -103,17 +116,18 @@ snv_ranges_filter <- function(maf_df,
   )
   
   filt_maf_df <- maf_df[unique(overlap@from), ]
-  
+  length_nrow<-length(filt_maf_df)
+  print(paste(length_nrow, "Columns intersected"))
+  #print(maf_df[subjectHits(overlap)])
   
   
   # Return this matrix with the WXS mutations filtered but WGS the same
-  return(filt_maf_df)
+  return(gr1.matched)
   
   
   
   
 }
-
 
 
 #input, change start and end position name and save the SNP location as loc_start and loc_end
@@ -132,12 +146,19 @@ bed_size <- as.numeric(sum(bed_ranges@ranges@width))
 
 # Filter out mutations that are outside of these coding regions.
 
-filt_maf_df <- snv_ranges_filter(a, keep_ranges = g4_bed,1)
+filt_maf_df <- snv_ranges_filter(a, keep_ranges = g4_bed,-1)
 
+unique(as.data.frame(filt_maf_df$mcols.Tumor_Sample_Barcode))
+
+
+
+unique(sample_maf_df$Tumor_Sample_Barcode)
 
 # Filter to only the sample's mutations
 sample_maf_df <- a %>%
-  dplyr::filter(Tumor_Sample_Barcode == Tumor_Sample_Barcode)
+  dplyr::filter(Tumor_Sample_Barcode == filt_maf_df$mcols.Tumor_Sample_Barcode)
+
+unique(sample_maf_df$Tumor_Sample_Barcode)
 
 
 
@@ -152,6 +173,9 @@ tmb <- filt_maf_df %>%
     region_size = bed_size,
     tmb = mutation_count / (region_size / 1000000)
   )
+
+
+
 
 
 
