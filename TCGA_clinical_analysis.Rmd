@@ -235,7 +235,7 @@ clin %>%
 ###Censoring and Event Plots  by Age Category
 
 #Contingency table
-xtabs(~agecat+in_g4,data=brca_clin) %>% addmargins()
+xtabs(~in_g4+agecat,data=brca_clin) %>% addmargins()
 
 brca_clin_age <- brca_clin %>%
   filter(!is.na(agecat)) %>%
@@ -249,7 +249,7 @@ brca_clin_age %>%
            x = years_to_event, #times, 
            yend = index, 
            colour = agecat,
-           shape = factor(vital_status))) + 
+           shape = factor(in_g4))) + 
   geom_segment() + 
   geom_point() +
   ggtitle("Right Censoring in TCGA - BRCA by Age Categories") +
@@ -263,7 +263,7 @@ brca_clin_age %>%
 ###Censoring and Event Plots  by Race
 
 #Contingency table
-xtabs(~race+vital_status,data=brca_clin) %>% addmargins()
+xtabs(~race+in_g4,data=brca_clin) %>% addmargins()
 
 brca_clin_race <- brca_clin %>%
   filter(!is.na(race)) %>%
@@ -428,7 +428,7 @@ brca_clin_Mstage %>%
 ### Censoring and Event Plots  by N  Stage
 
 #Contingency table
-xtabs(~pathologyNstage+vital_status,data=brca_clin)
+xtabs(~pathologyNstage+in_g4,data=brca_clin)
   addmargins() %>% 
   kable() %>% 
   kable_styling(full_width=F,bootstrap_options=c("bordered")) 
@@ -446,7 +446,7 @@ brca_clin_Nstage %>%
            x = years_to_event, #times, 
            yend = index, 
            colour = pathologyNstage,
-           shape = factor(vital_status))) + 
+           shape = factor(in_g4))) + 
   geom_segment() + 
   geom_point() +
   ggtitle("Right Censoring in TCGA - BRCA by Lymph Nodes (N) stage") +
@@ -459,7 +459,7 @@ brca_clin_Nstage %>%
 ## Cancer Types
 # Model the Kaplan Meier Survival Curve
 surv_can_obj <- with(clin, Surv(years_to_event, patient.vital_status))
-surv_can_fit<- survfit(surv_can_obj ~ admin.disease_code,data=clin)
+surv_can_fit<- survfit(surv_can_obj ~ in_g4,data=clin)
 surv_can_fit
 
 #Plot the survival curves for the different groups
