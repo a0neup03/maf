@@ -52,9 +52,78 @@ seq<-cbind(seq_left,g4_maf_s,as.data.frame(seq_right),seq_g4_full)
 seq$G4_ref<-paste0(seq$leftseq,seq$mcols.Reference_Allele,seq$rightseq)
 seq$G4_alt<-paste0(seq$leftseq,seq$mcols.Tumor_Seq_Allele2,seq$rightseq)
 
-all_1<-seq
+seq <- subset(seq, select = -c(snp_left, snp_right,leftseq,rightseq))
 
 identical(seq$G4_ref,seq$seq_g4_full)
+all_1<-seq
+
+rm(seq_left,seq_right,seq_g4_full,seq,)
+
+```
+
+```{r}
+#_--------------
+PatternFinder <- function(seq=seq, str.pattern="([G]{3}[NATGCU]{1,12}){3,}[G]{3}"){
+
+  all.strands  <- gregexpr(text = seq, pattern = str.pattern)
+
+  QP.RESULTS <- NULL
+  QP.RESULTS$start.pos  <- as.vector(all.strands[[1]])
+  QP.RESULTS$seq.length <- attr(all.strands[[1]], "match.length")
+
+
+
+  # Checking whether there are 0 returns (-1 by gregexpr)
+  rm.ind <- which(QP.RESULTS$start.pos==-1)
+  if(length(rm.ind)!=0){
+    QP.RESULTS$start.pos  <- QP.RESULTS$start.pos[-rm.ind]
+    QP.RESULTS$seq.length <- QP.RESULTS$seq.length[-rm.ind]
+  }
+
+  if(length(QP.RESULTS$start.pos)!=0){ # there ARE detected occurrences
+
+    # sorting the results in the order of their start.pos:
+    new.order  <- order(QP.RESULTS$start.pos)
+    #QP.RESULTS$start.pos  <- QP.RESULTS$start.pos[new.order]
+    #QP.RESULTS$seq.length <- QP.RESULTS$seq.length[new.order]
+	QP.RESULTS$G4_present<-1
+
+
+  } else { # there are NO detected occurrences
+    QP.RESULTS$start.pos     <- 9999
+    QP.RESULTS$seq.length    <- 9999
+    QP.RESULTS$G4_present<-0
+  }
+
+  #return(QP.RESULTS )
+  return(as.data.frame(QP.RESULTS, stringsAsFactors=FALSE))
+
+}
+
+```
+
+```{r}
+seq=(all_1$G4_ref)
+QP<-sapply(seq,PatternFinder)
+G4_ref	<-as.data.frame(t(QP))
+rownames(G4_ref)<-NULL
+colnames(G4_ref)<-c("start.pos_ref","seq.length_ref","G4_present_ref")
+
+seq=all_1$G4_alt
+QP<-sapply(seq,PatternFinder)
+G4_alt	<-as.data.frame(t(QP))
+rownames(G4_alt)<-NULL
+colnames(G4_alt)<-c("start.pos_alt","seq.length_alt","G4_present_alt")
+
+
+all_2<-cbind(all_1,G4_ref,G4_alt)
+
+library(tidyr)
+all_3<-unnest(all_2,c(G4_present_ref,G4_present_alt))
+all_3$g4_change<-(all_3$G4_present_ref)-(all_3$G4_present_alt)
+
+all_3$ref_alt<-paste0(all_3$mcols.Reference_Allele,"->",all_3$mcols.Tumor_Seq_Allele2)
+save(all_3,g4_maf,file="g4_maf.Rdata")
 
 
 

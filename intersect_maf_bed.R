@@ -9,9 +9,9 @@ library(dplyr)
 library(GenomicAlignments)
 #select G4 sequences with mutations
 
-g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Research/Annotate_G4_Clusters_CPP/Annotate_G4_Clusters_CPP/annotation_gencode/',sep= '\t',col.names=c("chromosome","start","end","id","score","strand")) %>%  arrange(chromosome,start,end)%>% distinct()
+#g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Research/Annotate_G4_Clusters_CPP/Annotate_G4_Clusters_CPP/annotation_gencode/',sep= '\t',col.names=c("chromosome","start","end","id","score","strand")) %>%  arrange(chromosome,start,end)%>% distinct()
 #make Granges data from the maf file
-maf <- GDCquery_Maf("CHOL", pipelines = "muse") %>% read.maf()
+maf <- GDCquery_Maf("BRCA", pipelines = "muse") %>% read.maf()
 
 g4_bed<-fread('C:/Users/Aryan Neupane/OneDrive - University of Louisville/Research/annotation_G_quad_28feb2020/4_bed.bed',sep= '\t',col.names=c("chromosome","start","end","strand","id")) %>%  arrange(chromosome,start,end)%>% distinct()
 
@@ -122,7 +122,7 @@ snv_ranges_filter <- function(maf_df,
   
   
   # Return this matrix with the WXS mutations filtered but WGS the same
-  return(gr1.matched)
+  return(g4_maf)
   
   
   
@@ -151,11 +151,10 @@ filt_maf_df <- snv_ranges_filter(a, keep_ranges = g4_bed,-1)
 unique(as.data.frame(filt_maf_df$mcols.Tumor_Sample_Barcode))
 
 
-
-unique(sample_maf_df$Tumor_Sample_Barcode)
+length(filt_maf_df$)
 
 # Filter to only the sample's mutations
-sample_maf_df <- a %>%
+sample_maf_df <- a %>% dplyr::filter(!is.na(a$Tumor_Sample_Barcode)) %>%
   dplyr::filter(Tumor_Sample_Barcode == filt_maf_df$mcols.Tumor_Sample_Barcode)
 
 unique(sample_maf_df$Tumor_Sample_Barcode)
@@ -174,8 +173,11 @@ tmb <- filt_maf_df %>%
     tmb = mutation_count / (region_size / 1000000)
   )
 
+unique(sample_maf_df$Tumor_Sample_Barcode)
 
 
+
+##filt_maf_df is the file with G4 mutations
 
 
 

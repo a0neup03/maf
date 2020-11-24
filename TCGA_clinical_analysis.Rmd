@@ -1,0 +1,498 @@
+
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(tidyverse)
+library(stringr) #for string manipulations
+library(forcats) # for factors
+
+library(knitr) # for kable
+library(kableExtra) # for formatting tables
+
+library(gridExtra) #for plotting in a grid
+
+library(xtable) 
+library(JM)
+library(cmprsk)
+
+#load survival libraries
+library(survminer)
+library(survival)
+
+# Test RTCGA: 
+library(RTCGA)
+library(RTCGA.clinical)
+library(RTCGA.mRNA)
+
+#modeling
+library(AICcmodavg)  #to extract AICc
+library(parmsurvfit)
+library(flexsurv)
+library(SurvRegCensCov)
+```
+
+```{r}
+clin <- survivalTCGA(BRCA.clinical, 
+                     extract.cols=c("admin.disease_code","patient.drugs.drug.therapy_types.therapy_type"))
+
+
+load("g4_maf.Rdata")
+
+
+```
+
+```{r}
+clin <- survivalTCGA(BRCA.clinical, OV.clinical, GBM.clinical, 
+                     extract.cols=c("admin.disease_code","patient.drugs.drug.therapy_types.therapy_type"))
+
+brca_clin_orig <- survivalTCGA(BRCA.clinical, 
+                     extract.cols=c("patient.gender", "patient.race",
+                                    "patient.ethnicity","patient.days_to_birth","patient.vital_status",
+                                    "patient.drugs.drug.therapy_types.therapy_type",
+                                    "patient.stage_event.pathologic_stage",
+                                    "patient.stage_event.tnm_categories.pathologic_categories.pathologic_t",
+                                    "patient.stage_event.tnm_categories.pathologic_categories.pathologic_n",
+                                    "patient.stage_event.tnm_categories.pathologic_categories.pathologic_m"))
+sapply(brca_clin_orig,class)
+
+
+## Checks for Missing and Invalid Data
+
+# Check for number of missing data in each column
+
+brca_clin_orig %>% sapply(function(x) sum(is.na(x)))
+#Check number of rows with missing data
+
+na_rows <- brca_clin_orig %>% apply(MARGIN=1, FUN=function(x) sum(is.na(x))) 
+sum(na_rows>0)
+
+
+brca_clin_orig %>% sapply(summary)
+brca_clin_orig %>% filter(times < 0) %>% nrow()
+
+
+#helper Functions
+clean_pathologic_stage <- function(x) {
+  x %>% str_replace_all(c(
+    "stage iv[a-d]*"="stage4",
+    "stage [i]{3}[a-d]*"="stage3",
+    "stage i{2}[a-d]*"="stage2",
+    "stage i{1}[a-d]*"="stage1",
+    "stage x"="stageX"))
+}
+
+
+clean_pathologyTstage <- function(x) {
+  x %>% str_replace_all(c(
+    "\\s*tx"="tx",
+    "\\s*t1[a-z]*"="t1", 
+    "\\s*t2[a-z]*"="t2",
+    "\\s*t3[a-z]*"="t3",
+    "\\s*t4[a-z]*"="t4"))
+}
+
+clean_pathologyMstage <- function(x) {
+  x %>% str_replace_all(c("cm0\\s+\\(i[\\+,-]\\)"="cm0"))
+}
+
+clean_pathologyNstage <- function(x) {
+  x %>% str_trim(.) %>% 
+    str_replace_all(c(
+      "nx"="nx", 
+      "n1[a-z]*"="n1", 
+      "n2[a-z]*"="n2",
+      "n3[a-z]*"="n3",
+      "n4[a-z]*"="n4",
+      "n0"="n0",
+      "n0\\s+\\([a-z]*[\\+|-]\\)"="n0"))
+}
+
+```
+
+```{r}
+
+#transform the data
+brca_clin <- brca_clin_orig %>%
+  dplyr::rename(gender=patient.gender,race=patient.race,
+         ethnicity=patient.ethnicity,
+         vital_status=patient.vital_status,
+         therapy_type=patient.drugs.drug.therapy_types.therapy_type,
+         pathologic_stage=patient.stage_event.pathologic_stage,
+         pathologyTstage=patient.stage_event.tnm_categories.pathologic_categories.pathologic_t,
+         pathologyNstage=patient.stage_event.tnm_categories.pathologic_categories.pathologic_n,
+         pathologyMstage=patient.stage_event.tnm_categories.pathologic_categories.pathologic_m) %>%
+  filter(gender == "female") %>% 
+  filter(times > 0) %>%
+  mutate(age=abs(as.numeric(patient.days_to_birth))/365,
+         therapy_type = ifelse(is.na(therapy_type),"No Info",therapy_type),
+         therapy_type = fct_lump(therapy_type,3),
+         race = fct_lump(race,2),
+         pathologic_stage=str_trim(pathologic_stage),
+         pathologyTstage=str_trim(pathologyTstage),
+         pathologyNstage=str_trim(pathologyNstage),
+         pathologyMstage=str_trim(pathologyMstage),
+         pathologic_stage = clean_pathologic_stage(pathologic_stage),
+         pathologyTstage = clean_pathologyTstage(pathologyTstage),
+         pathologyNstage = clean_pathologyNstage(pathologyNstage),
+         pathologyMstage = clean_pathologyMstage(pathologyMstage),
+         years_to_event=times/365,
+         agecat=cut(age, breaks=c(0, 40, 60, Inf), labels=c("young", "middle", "old")))
+   
+
+#Convert specified columns from character to factor type.
+convert_to_factor <- c("ethnicity", "pathologic_stage",
+                       "pathologyTstage", "pathologyMstage","pathologyNstage")
+brca_clin <- brca_clin %>% mutate_at(convert_to_factor,factor)      
+
+
+#remove unnecessary columns
+brca_clin <- brca_clin %>% 
+  dplyr::select(-starts_with("patient"))
+#names(brca_clin)
+
+
+#Verify the class types
+sapply(brca_clin,class)
+#dim(brca_clin)
+
+
+tcga.maf = as.data.frame(g4_maf[, c('mcols.Tumor_Sample_Barcode', 'mcols.Hugo_Symbol', 'mcols.Variant_Classification')])
+g4_maf$eval = paste(g4_maf$mcols.Hugo_Symbol, g4_maf$mcols.Variant_Classification, sep = ';')
+g4_maf$TSS = substr(g4_maf$mcols.Tumor_Sample_Barcode, start = 6, stop = 7)
+g4_maf$sample_id = substr(g4_maf$mcols.Tumor_Sample_Barcode, start = 1, stop = 12)
+
+##get clinical data samples with SNPs in G4 region
+clin_list<-unique(g4_maf$sample_id)
+brca_clin$in_g4<-as.numeric(brca_clin$bcr_patient_barcode %in% clin_list)
+
+clin$in_g4<-as.numeric(clin$bcr_patient_barcode %in% clin_list)
+```
+
+```{r}
+## Data Visualizations
+
+### Histograms
+#***Age at First Diagnosis**
+
+brca_clin %>% filter(!is.na(age)) %>% 
+  ggplot(aes(x=age)) +
+    geom_histogram(aes(y=..density..),color="black",fill="white")+
+    geom_density(alpha=0.2,fill="#FF6666") +
+    geom_vline(aes(xintercept=mean(age)), color="blue", linetype="dashed", size=1) +
+    labs(title="Age at First Diagnosis")
+
+brca_clin %>% filter(!is.na(age)) %>% 
+  ggplot(aes(x=age)) +
+    geom_histogram(color="black",fill="white")+
+    #geom_density(alpha=0.2,fill="#FF6666") +
+    geom_vline(aes(xintercept=mean(age)), color="blue", linetype="dashed", size=1) +
+    labs(title="Age at First Diagnosis")
+    
+
+brca_clin %>% filter(!is.na(times)) %>%
+  ggplot(aes(x=years_to_event)) +
+    geom_histogram(color="black",fill="white") +
+    geom_vline(aes(xintercept=mean(years_to_event)), color="blue", linetype="dashed", size=1) +
+    labs(title="Time to Event")
+
+brca_clin %>% dplyr::select(age) %>% summary()
+
+#Contingency table
+xtabs(~in_g4+vital_status,data=brca_clin) %>% addmargins()
+
+# Right Censoring Plot by Disease
+clin <- clin %>%
+  mutate(years_to_event=times/365) %>%
+  filter(!is.na(admin.disease_code)) %>%
+  arrange(admin.disease_code) 
+
+clin %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, 
+           yend = index, 
+           colour = admin.disease_code,
+           shape = factor(patient.vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - By Disease") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Disease", labels = c("BRCA (Breast Cancer)", "GBM (Glioblastoma Multiforme)", "OV (Ovarian Cancer)"))
+
+```
+
+```{r}
+###Censoring and Event Plots  by Age Category
+
+#Contingency table
+xtabs(~agecat+in_g4,data=brca_clin) %>% addmargins()
+
+brca_clin_age <- brca_clin %>%
+  filter(!is.na(agecat)) %>%
+  arrange(agecat) 
+
+brca_clin_age %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = agecat,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Age Categories") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Age Categories", labels = c("Young", "Middle", "Old"))
+
+```
+
+```{r}
+###Censoring and Event Plots  by Race
+
+#Contingency table
+xtabs(~race+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_race <- brca_clin %>%
+  filter(!is.na(race)) %>%
+  arrange(race) 
+
+brca_clin_race %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = race,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Race") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Race", labels = c("Black or African American", "White", "Other"))
+
+```
+
+```{r}
+#Contingency table
+xtabs(~ethnicity+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_ethnicity <- brca_clin %>%
+  filter(!is.na(ethnicity)) %>%
+  arrange(ethnicity)
+
+brca_clin_ethnicity %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = ethnicity,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Ethnicity") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Ethnicity", labels = c("Hispanic or Latino", "Not Hispanic or Latino"))
+```
+
+```{r}
+#Contingency table
+xtabs(~therapy_type+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_therapy <- brca_clin %>%
+  # mutate(therapy_type = ifelse(is.na(therapy_type),"No Info",therapy_type),
+  #        therapy_type = fct_lump(therapy_type,3)) %>%
+  arrange(therapy_type)
+
+brca_clin_therapy %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = therapy_type,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Therapy Type") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Therapy Type", labels = c("Chemotherapy","Hormone Therapy", "No Info", "Other"))
+```
+
+```{r}
+### Censoring and Event Plots  by Pathological Stage
+#Contingency table
+xtabs(~pathologic_stage+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_stage <- brca_clin %>%
+  filter (!is.na(pathologic_stage)) %>%
+  arrange(pathologic_stage)
+
+brca_clin_stage %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = pathologic_stage,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Pathologic (Cancer) Stage") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Cancer Stage", labels = c("Stage1","Stage2","Stage3","Stage4","StageX"))
+
+```
+
+```{r}
+### Censoring and Event Plots  by T stage
+#Contingency table
+xtabs(~pathologyTstage+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_Tstage <- brca_clin %>%
+  filter (!is.na(pathologyTstage)) %>%
+  arrange(pathologyTstage)
+
+brca_clin_Tstage %>%
+  arrange(pathologyTstage) %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = pathologyTstage,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Tumor (T) stage") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Tumor Stage", labels = c("t1","t2","t3","t4","tx"))
+
+
+
+
+```
+
+```{r}
+### Censoring and Event Plots  by M Stage
+
+#Contingency table
+xtabs(~pathologyMstage+vital_status,data=brca_clin) %>% addmargins()
+
+brca_clin_Mstage <- brca_clin %>%
+  filter (!is.na(pathologyMstage)) %>%
+  arrange(pathologyMstage)
+
+brca_clin_Mstage %>%
+  arrange(pathologyMstage) %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = pathologyMstage,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Metastasis (M) stage") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Metastatis Stage", labels = c("cm0","m0","m1","mx"))
+```
+
+```{r}
+### Censoring and Event Plots  by N  Stage
+
+#Contingency table
+xtabs(~pathologyNstage+vital_status,data=brca_clin)
+  addmargins() %>% 
+  kable() %>% 
+  kable_styling(full_width=F,bootstrap_options=c("bordered")) 
+
+brca_clin_Nstage <- brca_clin %>%
+  filter (!is.na(pathologyNstage)) %>%
+  arrange(pathologyNstage)
+
+brca_clin_Nstage %>%
+  arrange(pathologyNstage) %>%
+  mutate(index=1:n()) %>% 
+  ggplot(
+       aes(xend = 0, 
+           y = index, 
+           x = years_to_event, #times, 
+           yend = index, 
+           colour = pathologyNstage,
+           shape = factor(vital_status))) + 
+  geom_segment() + 
+  geom_point() +
+  ggtitle("Right Censoring in TCGA - BRCA by Lymph Nodes (N) stage") +
+  labs(x="Years to Event", y="Subjects") +
+  scale_shape_discrete(name = "Status", labels = c("Censored","Event")) +
+  scale_color_discrete(name = "Lymph Nodes Stage", labels = c("n0","n1","n2","n3","nx"))
+```
+
+```{r}
+## Cancer Types
+# Model the Kaplan Meier Survival Curve
+surv_can_obj <- with(clin, Surv(years_to_event, patient.vital_status))
+surv_can_fit<- survfit(surv_can_obj ~ admin.disease_code,data=clin)
+surv_can_fit
+
+#Plot the survival curves for the different groups
+ggplot_age_surv <- ggsurvplot(surv_can_fit,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves")
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_age_cumhaz <- ggsurvplot(surv_can_fit,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=5,
+           tables.height=0.3,
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_age_surv, ggplot_age_cumhaz), ncol=1)
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
