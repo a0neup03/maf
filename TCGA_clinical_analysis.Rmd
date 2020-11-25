@@ -52,7 +52,7 @@ load("g4_maf.Rdata")
 clin <- survivalTCGA(BRCA.clinical, OV.clinical, GBM.clinical, 
                      extract.cols=c("admin.disease_code","patient.drugs.drug.therapy_types.therapy_type"))
 
-brca_clin_orig <- survivalTCGA(BRCA.clinical, 
+brca_clin_orig <- survivalTCGA(BRCA.clinical,  OV.clinical, GBM.clinical,
                      extract.cols=c("patient.gender", "patient.race",
                                     "patient.ethnicity","patient.days_to_birth","patient.vital_status",
                                     "patient.drugs.drug.therapy_types.therapy_type",
@@ -456,6 +456,10 @@ brca_clin_Nstage %>%
 ```
 
 ```{r}
+
+```
+
+```{r}
 ## Cancer Types
 # Model the Kaplan Meier Survival Curve
 surv_can_obj <- with(clin, Surv(years_to_event, patient.vital_status))
@@ -489,6 +493,528 @@ ggplot_age_cumhaz <- ggsurvplot(surv_can_fit,
 
 arrange_ggsurvplots(list(ggplot_age_surv, ggplot_age_cumhaz), ncol=1)
 
+```
+```{r}
+##Time to Event only
+
+
+### Kaplan Meier Survival Curves 
+
+# Model the Kaplan Meier Survival Curve
+surv_obj <- with(brca_clin, Surv(years_to_event, vital_status))
+surv_fit<- survfit(surv_obj ~ 1,data=brca_clin)
+surv_fit
+#summary(surv_fit)
+#Plot the survival curves for the different groups
+ggplot_age_surv <- ggsurvplot(surv_fit,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves")
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_age_cumhaz <- ggsurvplot(surv_fit,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=5,
+           tables.height=0.3,
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_age_surv, ggplot_age_cumhaz), ncol=1)
+```
+
+```{r}
+### Parametric Modeling
+#Fit Weibull 
+surv_wei <- survreg(surv_obj ~ 1, data=brca_clin, dist="weibull")
+surv_wei_conv <- ConvertWeibull(surv_wei)
+surv_wei_conv
+
+#Fit Exponential
+surv_exp <- update(surv_wei,dist="exponential")
+summary(surv_exp)
+lambda <- exp(-1.0 * unname(surv_exp$icoef))
+paste("Constant Hazard Rate for Exponential Distribution without any predictor:",round(lambda,2), " events per year")
+
+# Compare the weibull and exponential distributions
+cmp_wei_exp <- anova(surv_wei, surv_exp)
+p_val <- cmp_wei_exp$"Pr(>Chi)"[2]
+deviance_wei <- cmp_wei_exp$"-2*LL"[1]
+deviance_exp <- cmp_wei_exp$"-2*LL"[2]
+better_dist <- ifelse(p_val < 0.05, ifelse(deviance_wei < deviance_exp, "weibull", "exp"), "both same")
+paste("The better fit parametric model:",better_dist)
+
+ifelse(better_dist == "weibull", surv_wei_conv, summary(surv_exp))
+
+
+```
+
+```{r}
+## Age Category
+
+### Kaplan Meier Survival Curves for Age Categories
+# Model the Kaplan Meier Survival Curve
+surv_obj_age <- with(brca_clin_age, Surv(years_to_event, vital_status))
+surv_fit_age<- survfit(surv_obj_age ~ agecat,data=brca_clin_age)#times,
+surv_fit_age
+
+
+#Plot the survival curves for the different groups
+ggplot_age_surv <- ggsurvplot(surv_fit_age,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves by Age Categories")
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_age_cumhaz <- ggsurvplot(surv_fit_age,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves by Age Categories",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_age_surv, ggplot_age_cumhaz), ncol=1)
+
+
+#**Compare Survival Curves**
+#Check for Difference between the survival curves
+survdiff(surv_obj_age ~ agecat,data=brca_clin_age)
+
+##**Check for  pairs of curves that are different**
+surv_pairdiff_age <- pairwise_survdiff(Surv(years_to_event,vital_status)~agecat,data=brca_clin)
+surv_pairdiff_age
+symnum(surv_pairdiff_age$p.value, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+   symbols = c("****", "***", "**", "*", "+", " "),
+   abbr.colnames = FALSE, na = "")
+
+```
+
+```{r}
+## Age Category
+
+### Kaplan Meier Survival Curves for Age Categories
+# Model the Kaplan Meier Survival Curve
+surv_obj_G4 <- with(brca_clin_age, Surv(years_to_event, vital_status))
+surv_fit_G4<- survfit(surv_obj_G4 ~ in_g4,data=brca_clin_age)#times,
+surv_fit_G4
+
+
+#Plot the survival curves for the different groups
+ggplot_G4_surv <- ggsurvplot(surv_fit_G4,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves by Age Categories")
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_G4_cumhaz <- ggsurvplot(surv_fit_G4,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves by Age Categories",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_G4_surv, ggplot_G4_cumhaz), ncol=1)
+
+
+#**Compare Survival Curves**
+#Check for Difference between the survival curves
+survdiff(surv_obj_G4 ~ in_g4,data=brca_clin_age)
+
+
+#**Check for  pairs of curves that are different**
+surv_pairdiff_age <- pairwise_survdiff(Surv(years_to_event,vital_status)~in_g4,data=brca_clin)
+surv_pairdiff_age
+symnum(surv_pairdiff_age$p.value, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+   symbols = c("****", "***", "**", "*", "+", " "),
+   abbr.colnames = FALSE, na = "")
+
+
+
+```
+
+```{r}
+## Ethnicity
+
+### Kaplan Meier Survival Curves for Ethnicity
+# Model the Kaplan Meier Survival Curve
+surv_obj_ethnicity <- with(brca_clin_ethnicity, Surv(years_to_event, vital_status))
+surv_fit_ethnicity<- survfit(surv_obj_ethnicity ~ ethnicity,data=brca_clin_ethnicity)#times,
+surv_fit_ethnicity
+
+#Plot the survival curves for the different groups
+ggplot_ethnicity_surv <- ggsurvplot(surv_fit_ethnicity,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves by Ethnicity",
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_ethnicity_cumhaz <- ggsurvplot(surv_fit_ethnicity,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves by Ethnicity",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_ethnicity_surv, ggplot_ethnicity_cumhaz), ncol=1)
+
+#Check for Difference between the survival curves
+surv_fit_ethnicity <- survdiff(surv_obj_ethnicity ~ ethnicity,data=brca_clin_ethnicity)
+
+### Cox Proportional Hazard (PH) Model for Ethnicity
+# Fit the model
+cox_ethnicity <- coxph(surv_obj_ethnicity ~ ethnicity, data=brca_clin_ethnicity)
+
+### Parametric Modeling - Ethnicity
+#Fit Weibull 
+surv_wei_ethnicity <- survreg(surv_obj_ethnicity ~ ethnicity, data=brca_clin_ethnicity, dist="weibull")
+surv_wei_ethnicity_conv <- ConvertWeibull(surv_wei_ethnicity)
+summary(surv_wei_ethnicity)
+
+#Fit Exponential
+surv_exp_ethnicity <- update(surv_wei_ethnicity,dist="exponential")
+summary(surv_exp_ethnicity)
+#lambda <- exp(-1.0 * unname(surv_exp_age$coefficients[1]))
+#paste("Constant Hazard Rate for Exponential Distribution with Age as predictor:",round(lambda,2), " events/year")
+
+
+# Compare the weibull and exponential distributions
+cmp_wei_exp_ethnicity <- anova(surv_wei_ethnicity, surv_exp_ethnicity)
+p_val <- cmp_wei_exp_ethnicity$"Pr(>Chi)"[2]
+deviance_wei <- cmp_wei_exp_ethnicity$"-2*LL"[1]
+deviance_exp <- cmp_wei_exp_ethnicity$"-2*LL"[2]
+better_dist <- ifelse(p_val < 0.05, ifelse(deviance_wei < deviance_exp, "weibull", "exp"), "both same")
+paste("The better fit parametric model:",better_dist)
+
+```
+
+```{r}
+
+## Therapy Type
+
+### Kaplan Meier Survival Curves for Therapy Type
+# Model the Kaplan Meier Survival Curve
+surv_obj_therapy <- with(brca_clin_therapy, Surv(years_to_event, vital_status))
+surv_fit_therapy<- survfit(surv_obj_therapy~therapy_type,data=brca_clin_therapy)#times,
+surv_fit_therapy
+
+#Plot the survival curves for the different groups
+ggplot_therapy_surv <- ggsurvplot(surv_fit_therapy,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves by Therapy Type",
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_therapy_cumhaz <- ggsurvplot(surv_fit_therapy,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves by Therapy Type",
+           risk.table=TRUE,
+           cumevents = TRUE,
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_therapy_surv, ggplot_therapy_cumhaz), ncol=1)
+
+
+#Check for Difference between the survival curves
+survdiff(surv_obj_therapy ~ factor(therapy_type,exclude=NULL),data=brca_clin_therapy)
+surv_pairdiff_therapy <- pairwise_survdiff(Surv(years_to_event,vital_status)~therapy_type,data=brca_clin)
+surv_pairdiff_therapy
+
+symnum(surv_pairdiff_therapy$p.value, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+   symbols = c("****", "***", "**", "*", "+", " "),
+   abbr.colnames = FALSE, na = "")
+
+
+
+
+
+```
+
+```{r}
+
+
+########ERROR OF  SOME KIND
+### Cox Proportional Hazard (PH) Model for Therapy
+## Fit the model
+cox_therapy <- coxph(surv_obj_therapy ~ therapy_type, data=brca_clin_therapy)
+
+##**Check for Proportional Hazards assumption**
+#check for proportional hazard assumptions
+test_ph_therapy <- cox.zph(cox_therapy)
+test_ph_therapy
+
+ggcoxzph(test_ph_therapy)
+#plot(test_ph_therapy)
+
+#ggcoxdiagnostics(cox_therapy,type="schoenfeld", data=brca_clin_therapy)
+
+
+##**Model Interpretation**
+summary(cox_therapy)
+ggforest(cox_therapy,data=brca_clin_therapy)
+
+
+
+
+
+#**Plots of Survival Curves by Therapy Type** 
+ggadjustedcurves(cox_therapy, var="therapy_type", data = brca_clin_therapy)
+
+### Parametric modeling - Therapy
+#Fit Weibull 
+surv_wei_therapy <- survreg(surv_obj_therapy ~ therapy_type, data=brca_clin_therapy, dist="weibull")
+surv_wei_therapy_conv <- ConvertWeibull(surv_wei_therapy)
+summary(surv_wei_therapy)
+
+
+#Fit Exponential
+# We  cannot consider nested models here as weibull is not a good fit.
+surv_exp_therapy <- survreg(surv_obj_therapy ~ therapy_type, data=brca_clin_therapy,dist="exponential")
+summary(surv_exp_therapy)
+lambda <- exp(-1.0 * unname(surv_exp_therapy$coefficients[1]))
+paste("Constant Hazard Rate for Exponential Distribution with therapy as predictor:",round(lambda, digits=2) , "events/year")
+
+
+
+
+# Compare the weibull and exponential distributions
+cmp_wei_exp_therapy <- anova(surv_wei_therapy, surv_exp_therapy)
+cmp_wei_exp_therapy
+p_val <- cmp_wei_exp_therapy$"Pr(>Chi)"[2]
+deviance_wei <- cmp_wei_exp_therapy$"-2*LL"[1]
+deviance_exp <- cmp_wei_exp_therapy$"-2*LL"[2]
+better_dist <- ifelse(p_val < 0.05, ifelse(deviance_wei < deviance_exp, "weibull", "exp"), "both same")
+paste("The better fit parametric model:",better_dist)
+
+
+```
+
+```{r}
+
+## Cancer Stage (Cancer Stage)
+
+### Kaplan Meier Survival Curves for Cancer Stage
+# Model the Kaplan Meier Survival Curve
+surv_obj_stage <- with(brca_clin_stage, Surv(years_to_event, vital_status))
+surv_fit_stage<- survfit(surv_obj_stage ~ pathologic_stage,data=brca_clin_stage)#times,
+surv_fit_stage
+
+#Plot the survival curves for the different groups
+ggplot_stage_surv <- ggsurvplot(surv_fit_stage,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           surv.median.line = "hv",
+           legend="right",
+           title="Survival Curves by Cancer Stage",
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+#Plot the cumulative hazard rates for the different groups
+ggplot_stage_cumhaz <- ggsurvplot(surv_fit_stage,
+           pval = TRUE,
+           conf.int = TRUE,
+           conf.int.fill="strata",
+           conf.int.alpha=0.2,
+           fun="cumhaz",
+           legend="right",
+           title="Cumulative Hazard Curves by Cancer Stage",
+           risk.table=TRUE,
+           cumevents=TRUE,
+           fontsize=2,
+           tables.height=0.3,
+           tables.col="strata",
+           surv.plot.height=1)
+
+arrange_ggsurvplots(list(ggplot_stage_surv, ggplot_stage_cumhaz), ncol=1)
+
+#Check for Difference between the survival curves
+survdiff(surv_obj_stage ~ factor(pathologic_stage),data=brca_clin_stage)
+
+brca_clin_stage_2 <- brca_clin_stage %>%
+  filter(!is.na(pathologic_stage)) %>%
+  mutate(pathologic_stage = factor(pathologic_stage))
+
+
+surv_pairdiff_stage <- pairwise_survdiff(Surv(years_to_event,vital_status)~pathologic_stage,data=brca_clin)
+surv_pairdiff_stage
+symnum(surv_pairdiff_stage$p.value, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+   symbols = c("****", "***", "**", "*", "+", " "),
+   abbr.colnames = FALSE, na = "")
+```
+
+```{r}
+### Cox Proportional Hazard (PH) Model for Pathologic Stage (Cancer Stage)
+cox_stage <- coxph(surv_obj_stage ~ pathologic_stage, data=brca_clin_stage)
+
+#**Check for Proportional Hazards Assumption**
+#check for proportional hazard assumptions
+test_ph_stage <- cox.zph(cox_stage)
+test_ph_stage
+
+ggcoxzph(test_ph_stage)
+#plot(test_ph_stage)
+#ggcoxdiagnostics(cox_stage,type="schoenfeld", data=brca_clin_stage)
+
+
+#When tested for proportional hazards, it seems that the hazard ratios of stage 3 and stage 4 with stage 1 are not proportional. We will attempt by splitting the survival data into multiple groups by time cutoff.
+
+#**Split Survival Data into Time Groups**
+brca_clin_stage_2 <- survSplit(Surv(years_to_event,vital_status) ~ pathologic_stage,
+                               data=brca_clin_stage,
+                               cut=c(8),
+                               episode="time_group")
+cox_stage_2 <- coxph(Surv(tstart,years_to_event,vital_status) ~pathologic_stage:strata(time_group),
+                     data=brca_clin_stage_2)
+
+test_ph_stage_2 <- cox.zph(cox_stage_2)
+ggcoxzph(test_ph_stage_2,ncol=1)
+
+```
+
+```{r}
+##########carry  out the above analysis for any factors necessary 
+
+
+
+## Cox Proportional Hazard Model for All - no interactions
+
+### Cox model with Age, Therapy and Cancer Stages
+
+surv_obj_all <- with(brca_clin, Surv(years_to_event, vital_status))
+cox_all <- coxph(surv_obj_all ~ age  + therapy_type + pathologic_stage +in_g4, data=brca_clin)
+cox_all_cat <- coxph(surv_obj_all ~ agecat  + therapy_type + pathologic_stage , data=brca_clin)
+
+
+#**Check for Proportional Hazards Assumption**
+# Test for PH significance
+test_ph_all <- cox.zph(cox_all)
+test_ph_all
+plot(test_ph_all)
+
+
+
+summary(cox_all)
+plot(cox_all$residuals)
+
+
+
+### Cox model with Age, Therapy, Tumor, and Lymph Node Stages
+cox_all_2 <- coxph(surv_obj_all ~ age + therapy_type +  pathologyTstage + pathologyNstage+in_g4, data=brca_clin)
+
+#**Check for Proportional Hazards Assumption**
+test_ph_all_2 <- cox.zph(cox_all_2,terms=TRUE)
+test_ph_all_2
+
+#ggcoxzph(test_ph_all_2)
+plot(test_ph_all_2)
+```
+
+```{r}
+#**Interpretation of the Model**
+
+summary(cox_all_2)
+plot(cox_all_2$residuals)
+
+
+### Parametric modeling - All
+#Fit Weibull 
+surv_wei_all <- survreg(surv_obj_all ~ age + therapy_type + pathologic_stage+in_g4, data=brca_clin, dist="weibull")
+surv_wei_all_conv <- ConvertWeibull(surv_wei_all)
+summary(surv_wei_all)
+
+#Fit Exponential
+surv_exp_all <- update(surv_wei_all,dist="exponential")
+summary(surv_exp_all)
+lambda <- exp(-1.0 * unname(surv_exp_all$coefficients[1]))
+paste("Constant Hazard Rate for Exponential Distribution with all as predictor:",round(lambda,2), " events/year")
+
+# Compare the weibull and exponential distributions
+cmp_wei_exp_all <- anova(surv_wei_all, surv_exp_all)
+p_val <- cmp_wei_exp_all$"Pr(>Chi)"[2]
+deviance_wei <- cmp_wei_exp_all$"-2*LL"[1]
+deviance_exp <- cmp_wei_exp_all$"-2*LL"[2]
+better_dist <- ifelse(p_val < 0.05, ifelse(deviance_wei < deviance_exp, "weibull", "exp"), "both same")
+paste("The better fit parametric model:",better_dist)
+
+ifelse(better_dist == "weibull", surv_wei_all_conv, summary(surv_exp_all))
+
+
+```
+
+```{r}
+https://www.biostars.org/p/153013/
+https://github.com/srmcc/survival_factor_model/blob/1710057bcbbfd3d0b3e0d746ea8c7b09e030d40d/survival/download_data.R
+
+https://github.com/cran/UCSCXenaTools/blob/5297785c449feac989991dd359767ade4ed8629f/R/simplify.R
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
